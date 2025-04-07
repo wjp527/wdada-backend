@@ -1,0 +1,18 @@
+package com.wjp.wdada.mapper;
+
+import com.wjp.wdada.model.entity.PostThumb;
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+
+/**
+ * 帖子点赞数据库操作
+ *
+ * @author <a href="https://github.com/liwjp">程序员鱼皮</a>
+ * @from <a href="https://wjp.icu">编程导航知识星球</a>
+ */
+public interface PostThumbMapper extends BaseMapper<PostThumb> {
+
+}
+
+
+
+
