@@ -14,9 +14,13 @@ import com.wjp.wdada.model.dto.userAnswer.UserAnswerAddRequest;
 import com.wjp.wdada.model.dto.userAnswer.UserAnswerEditRequest;
 import com.wjp.wdada.model.dto.userAnswer.UserAnswerQueryRequest;
 import com.wjp.wdada.model.dto.userAnswer.UserAnswerUpdateRequest;
+import com.wjp.wdada.model.entity.App;
 import com.wjp.wdada.model.entity.UserAnswer;
 import com.wjp.wdada.model.entity.User;
+import com.wjp.wdada.model.enums.ReviewStatusEnum;
 import com.wjp.wdada.model.vo.UserAnswerVO;
+import com.wjp.wdada.scoring.ScoringStrategyExecutor;
+import com.wjp.wdada.service.AppService;
 import com.wjp.wdada.service.UserAnswerService;
 import com.wjp.wdada.service.UserService;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +48,12 @@ public class UserAnswerController {
     @Resource
     private UserService userService;
 
+    @Resource
+    private AppService appService;
+
+    @Resource
+    private ScoringStrategyExecutor scoringStrategyExecutor;
+
     // region 增删改查
 
     /**
@@ -63,6 +73,15 @@ public class UserAnswerController {
         userAnswer.setChoices(JSONUtil.toJsonStr(choices));
         // 数据校验
         userAnswerService.validUserAnswer(userAnswer, true);
+
+        Long appId = userAnswerAddRequest.getAppId();
+        ThrowUtils.throwIf(appId <= 0, ErrorCode.PARAMS_ERROR, "appId 不能为空");
+        App app = appService.getById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "appId 不存在");
+        if(!ReviewStatusEnum.PASS.equals(ReviewStatusEnum.getEnumByValue(app.getReviewStatus()))) {
+            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "当前应用未通过审核，无法提交答案");
+        }
+
         // todo 填充默认值
         User loginUser = userService.getLoginUser(request);
         userAnswer.setUserId(loginUser.getId());
@@ -71,6 +90,16 @@ public class UserAnswerController {
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
         // 返回新写入的数据 id
         long newUserAnswerId = userAnswer.getId();
+        // 调用评分模块
+        try {
+            UserAnswer userAnswerWithResult = scoringStrategyExecutor.doScore(choices, app);
+            // 更新数据库
+            userAnswerWithResult.setId(newUserAnswerId);
+            userAnswerService.updateById(userAnswerWithResult);
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, "评分错误");
+        }
         return ResultUtils.success(newUserAnswerId);
     }
 

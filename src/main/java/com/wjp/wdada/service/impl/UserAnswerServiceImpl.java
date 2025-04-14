@@ -57,18 +57,11 @@ public class UserAnswerServiceImpl extends ServiceImpl<UserAnswerMapper, UserAns
         ThrowUtils.throwIf(userAnswer == null, ErrorCode.PARAMS_ERROR);
         // todo 从对象中取值
         Long appId = userAnswer.getAppId();
-        Integer appType = userAnswer.getAppType();
-        Integer scoringStrategy = userAnswer.getScoringStrategy();
-
-        AppTypeEnum appTypeEnum = AppTypeEnum.getEnumByValue(appType);
-        AppScoringStrategyEnum appScoringStrategyEnum = AppScoringStrategyEnum.getEnumByValue(scoringStrategy);
 
         // 创建数据时，参数不能为空
         if (add) {
             // todo 补充校验规则
             ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "AppId不能为空");
-            ThrowUtils.throwIf(appTypeEnum == null, ErrorCode.PARAMS_ERROR, "App应用类型不能为空");
-            ThrowUtils.throwIf(appScoringStrategyEnum == null, ErrorCode.PARAMS_ERROR, "App评分策略不能为空");
         }
         // 修改数据时，有参数则校验
         // 补充校验规则

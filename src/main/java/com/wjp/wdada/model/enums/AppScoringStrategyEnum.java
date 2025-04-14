@@ -13,8 +13,8 @@ import java.util.stream.Collectors;
  */
 public enum AppScoringStrategyEnum {
 
-    USER("自定义", 0),
-    ADMIN("AI", 1);
+    CUSTOM("自定义", 0),
+    AI("AI", 1);
 
     private final String text;
 

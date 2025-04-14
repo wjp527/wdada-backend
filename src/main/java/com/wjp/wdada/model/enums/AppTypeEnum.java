@@ -13,8 +13,8 @@ import java.util.stream.Collectors;
  */
 public enum AppTypeEnum {
 
-    USER("得分类", 0),
-    ADMIN("测评类", 1);
+    SCORE("得分类", 0),
+    TEST("测评类", 1);
 
     private final String text;
 

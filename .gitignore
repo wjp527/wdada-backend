@@ -2,6 +2,8 @@
 ### @from <a href="https://wjp.icu">编程导航知识星球</a> ###
 
 HELP.md
+application-local.yml
+application-prod.yml
 target/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
