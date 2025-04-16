@@ -24,7 +24,7 @@ import java.util.stream.Collectors;
  * 自定义测评类应用评分策略
  * @author wjp
  */
-//
+// 测评 + 自定义
 @ScoringStrategyConfig(appType = 1, scoringStrategy = 0)
 public class CustomTestScoringStrategy implements ScoringStrategy {
 

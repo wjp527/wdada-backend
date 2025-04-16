@@ -23,6 +23,7 @@ import java.util.stream.Collectors;
  * 自定义打分类应用评分策略
  * @author wjp
  */
+// 策略: 打分 + 自定义
 @ScoringStrategyConfig(appType = 0, scoringStrategy = 0)
 public class CustomScoreScoringStrategy implements ScoringStrategy {
 

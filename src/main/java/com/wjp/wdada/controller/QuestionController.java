@@ -2,6 +2,7 @@ package com.wjp.wdada.controller;
 
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wjp.wdada.annotation.AuthCheck;
 import com.wjp.wdada.common.BaseResponse;
 import com.wjp.wdada.common.DeleteRequest;
@@ -10,25 +11,33 @@ import com.wjp.wdada.common.ResultUtils;
 import com.wjp.wdada.constant.UserConstant;
 import com.wjp.wdada.exception.BusinessException;
 import com.wjp.wdada.exception.ThrowUtils;
+import com.wjp.wdada.manager.ZhiPuAiManager;
 import com.wjp.wdada.model.dto.question.*;
+import com.wjp.wdada.model.entity.App;
 import com.wjp.wdada.model.entity.Question;
 import com.wjp.wdada.model.entity.User;
+import com.wjp.wdada.model.enums.AppTypeEnum;
 import com.wjp.wdada.model.vo.QuestionVO;
+import com.wjp.wdada.service.AppService;
 import com.wjp.wdada.service.QuestionService;
 import com.wjp.wdada.service.UserService;
 import lombok.extern.slf4j.Slf4j;
+import net.bytebuddy.implementation.bytecode.Throw;
 import org.springframework.beans.BeanUtils;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import static com.wjp.wdada.utils.ZhiPuAIDispose.*;
 
 /**
  * 题目接口
- *
- * @author <a href="https://github.com/liwjp">程序员鱼皮</a>
- * @from <a href="https://www.code-nav.cn">编程导航学习圈</a>
+ * @author wjp
  */
 @RestController
 @RequestMapping("/question")
@@ -40,6 +49,12 @@ public class QuestionController {
 
     @Resource
     private UserService userService;
+
+    @Resource
+    private AppService appService;
+
+    @Resource
+    private ZhiPuAiManager zhiPuAiManager;
 
     // region 增删改查
 
@@ -238,6 +253,48 @@ public class QuestionController {
         boolean result = questionService.updateById(question);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
         return ResultUtils.success(true);
+    }
+
+    // endregion
+
+    // region AI生成功能
+
+    /**
+     * AI 生成题目
+     * @param zhiPuAiGenerateQuestionRequest 请求体
+     * @param request 请求
+     * @return
+     * @throws Exception
+     */
+    @PostMapping("/ai_generate")
+    public BaseResponse<List<QuestionContentDTO>> aiGenerateQuestion(@RequestBody ZhiPuAiGenerateQuestionRequest zhiPuAiGenerateQuestionRequest, HttpServletRequest request) throws Exception {
+        User loginUser = userService.getLoginUser(request);
+        ThrowUtils.throwIf(loginUser == null, ErrorCode.NOT_LOGIN_ERROR, "请先登录");
+        ThrowUtils.throwIf(zhiPuAiGenerateQuestionRequest == null, ErrorCode.PARAMS_ERROR, "参数错误");
+
+        // 获取参数
+        Long appId = zhiPuAiGenerateQuestionRequest.getAppId();
+        int questionNumber = zhiPuAiGenerateQuestionRequest.getQuestionNumber();
+        int optionNumber = zhiPuAiGenerateQuestionRequest.getOptionNumber();
+
+        // 校验应用是否存在
+        App app = appService.getById(appId);
+        // 校验参数
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
+        ThrowUtils.throwIf(questionNumber <= 0 || optionNumber <= 0 || optionNumber > 10, ErrorCode.PARAMS_ERROR, "题目数量错误");
+        ThrowUtils.throwIf(optionNumber > 4, ErrorCode.PARAMS_ERROR, "选项数量不能超过4");
+
+        // 获取 题目生成的格式信息
+        String userMessage = getGenerateQuestionUserMessage(app, questionNumber, optionNumber);
+        // 根据 智谱 接口生成题目
+        String result = zhiPuAiManager.doSyncRequest(GENERAwTE_QUESTION_SYSTEM_MESSAGE, userMessage,null);
+
+        ThrowUtils.throwIf(result == null || result.isEmpty(), ErrorCode.OPERATION_ERROR, "生成失败");
+
+        // 将字符串转为对象
+        List<QuestionContentDTO> questions = parseFullResponse(result);
+
+        return ResultUtils.success(questions);
     }
 
     // endregion

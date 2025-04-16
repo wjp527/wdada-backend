@@ -74,3 +74,8 @@ knife4j:
         api-rule: package
         api-rule-resources:
           - com.wjp.wdada.controller
+
+# 智谱AI大模型
+# https://open.bigmodel.cn/
+zhipu-ai:
+  apikey: xxx
