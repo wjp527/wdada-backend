@@ -66,8 +66,8 @@ public class ZhiPuAIDispose {
         userMessage.append(app.getAppName()+"\n");
         userMessage.append(app.getAppDesc()+"\n");
         userMessage.append(AppTypeEnum.getEnumByValue(app.getAppType()).getText()+"类").append("\n");
-        userMessage.append(questionNumber+"\n");
-        userMessage.append(optionNumber);
+        userMessage.append("题目数:"+questionNumber+"\n");
+        userMessage.append("选项数:"+optionNumber);
         return userMessage.toString();
     }
 
