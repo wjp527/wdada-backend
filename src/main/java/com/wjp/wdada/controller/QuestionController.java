@@ -18,12 +18,14 @@ import com.wjp.wdada.model.entity.App;
 import com.wjp.wdada.model.entity.Question;
 import com.wjp.wdada.model.entity.User;
 import com.wjp.wdada.model.enums.AppTypeEnum;
+import com.wjp.wdada.model.enums.UserRoleEnum;
 import com.wjp.wdada.model.vo.QuestionVO;
 import com.wjp.wdada.service.AppService;
 import com.wjp.wdada.service.QuestionService;
 import com.wjp.wdada.service.UserService;
 import com.zhipu.oapi.service.v4.model.ModelData;
 import io.reactivex.Flowable;
+import io.reactivex.Scheduler;
 import io.reactivex.schedulers.Schedulers;
 import lombok.extern.slf4j.Slf4j;
 import net.bytebuddy.implementation.bytecode.Throw;
@@ -35,6 +37,7 @@ import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -61,6 +64,9 @@ public class QuestionController {
 
     @Resource
     private ZhiPuAiManager zhiPuAiManager;
+
+    @Resource
+    private Scheduler privilegedUserScheduler;
 
     // region 增删改查
 
@@ -303,8 +309,16 @@ public class QuestionController {
         return ResultUtils.success(questions);
     }
 
+    /**
+     * AI 生成题目 SSE
+     * @param aiGenerateQuestionRequest 请求体
+     * @param request 请求
+     * @return
+     */
     @GetMapping("/ai_generate/sse")
-    public SseEmitter aiGenerateQuestionSSE(ZhiPuAiGenerateQuestionRequest aiGenerateQuestionRequest) {
+    public SseEmitter aiGenerateQuestionSSE(ZhiPuAiGenerateQuestionRequest aiGenerateQuestionRequest, HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        ThrowUtils.throwIf(loginUser == null, ErrorCode.NOT_LOGIN_ERROR, "请先登录");
         ThrowUtils.throwIf(aiGenerateQuestionRequest == null, ErrorCode.PARAMS_ERROR);
         // 获取参数
         Long appId = aiGenerateQuestionRequest.getAppId();
@@ -323,9 +337,17 @@ public class QuestionController {
         StringBuilder contentBuilder = new StringBuilder();
         // 使用原子类，在异步情况下，保证 线程安全问题
         AtomicInteger flag = new AtomicInteger(0);
+
+        Scheduler scheduler = Schedulers.io();
+        // 如果用户是admin用户，则使用定时线程池
+        if("admin".equals(loginUser.getUserRole())) {
+            scheduler = privilegedUserScheduler;
+        }
+
+        // 订阅留
         modelDataFlowable
                 // 异步线程池执行
-                .observeOn(Schedulers.io())
+                .observeOn(scheduler)
                 // 将字符串转为对象
                 .map(chunk -> chunk.getChoices().get(0).getDelta().getContent())
                 .map(message -> message.replaceAll("\\s", ""))
@@ -350,6 +372,89 @@ public class QuestionController {
                         if (c == '}') {
                             flag.addAndGet(-1);
                             if (flag.get() == 0) {
+                                // 输出当前线程的名称
+                                System.out.println(Thread.currentThread().getName());
+                                if(!"admin".equals(loginUser.getUserRole())) {
+                                    Thread.sleep(2000L);
+                                }
+                                // 累积单套题目满足 json 格式后，sse 推送至前端
+                                // sse 需要压缩成当行 json，sse 无法识别换行
+                                emitter.send(JSONUtil.toJsonStr(contentBuilder.toString()));
+                                // 清空 StringBuilder
+                                contentBuilder.setLength(0);
+                            }
+                        }
+                    }
+                }).doOnComplete(emitter::complete).subscribe();
+        return emitter;
+    }
+
+    /**
+     * AI 生成题目 SSE 测试接口【隔离线程池使用】
+     * @param aiGenerateQuestionRequest 请求体
+     * @return
+     */
+    @GetMapping("/ai_generate/sse/test")
+    public SseEmitter aiGenerateQuestionSSETest(ZhiPuAiGenerateQuestionRequest aiGenerateQuestionRequest, Boolean isAdmin) {
+
+        ThrowUtils.throwIf(aiGenerateQuestionRequest == null, ErrorCode.PARAMS_ERROR);
+        // 获取参数
+        Long appId = aiGenerateQuestionRequest.getAppId();
+        int questionNumber = aiGenerateQuestionRequest.getQuestionNumber();
+        int optionNumber = aiGenerateQuestionRequest.getOptionNumber();
+        // 获取应用信息
+        App app = appService.getById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR);
+
+        // 封装 Prompt
+        String userMessage = getGenerateQuestionUserMessage(app, questionNumber, optionNumber);
+        // 建立 SSE 连接对象，0 表示不超时
+        SseEmitter emitter = new SseEmitter(0L);
+        // AI 生成，sse 流式返回
+        Flowable<ModelData> modelDataFlowable = zhiPuAiManager.doStreamRequest(GENERAwTE_QUESTION_SYSTEM_MESSAGE, userMessage, null);
+        StringBuilder contentBuilder = new StringBuilder();
+        // 使用原子类，在异步情况下，保证 线程安全问题
+        AtomicInteger flag = new AtomicInteger(0);
+
+        Scheduler scheduler = Schedulers.single();
+        // 如果用户是admin用户，则使用定时线程池
+        if(isAdmin) {
+            scheduler = privilegedUserScheduler;
+        }
+
+        // 订阅留
+        modelDataFlowable
+                // 异步线程池执行
+                .observeOn(scheduler)
+                // 将字符串转为对象
+                .map(chunk -> chunk.getChoices().get(0).getDelta().getContent())
+                .map(message -> message.replaceAll("\\s", ""))
+                .filter(StrUtil::isNotBlank)
+                .flatMap(message -> {
+                    // 将字符串转换为 List<Character>
+                    List<Character> charList = new ArrayList<>();
+                    for (char c : message.toCharArray()) {
+                        charList.add(c);
+                    }
+                    return Flowable.fromIterable(charList);
+                })
+                .doOnNext(c -> {
+                    {
+                        // 识别第一个 [ 表示开始 AI 传输 json 数据，打开 flag 开始拼接 json 数组
+                        if (c == '{') {
+                            flag.addAndGet(1);
+                        }
+                        if (flag.get() > 0) {
+                            contentBuilder.append(c);
+                        }
+                        if (c == '}') {
+                            flag.addAndGet(-1);
+                            if (flag.get() == 0) {
+                                // 输出当前线程的名称
+                                System.out.println(Thread.currentThread().getName());
+                                if(!isAdmin) {
+                                    Thread.sleep(10000L);
+                                }
                                 // 累积单套题目满足 json 格式后，sse 推送至前端
                                 // sse 需要压缩成当行 json，sse 无法识别换行
                                 emitter.send(JSONUtil.toJsonStr(contentBuilder.toString()));
