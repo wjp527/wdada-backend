@@ -1,5 +1,6 @@
 package com.wjp.wdada.controller;
 
+import cn.hutool.core.util.IdUtil;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.wjp.wdada.annotation.AuthCheck;
@@ -25,10 +26,12 @@ import com.wjp.wdada.service.UserAnswerService;
 import com.wjp.wdada.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
+import java.util.DuplicateFormatFlagsException;
 import java.util.List;
 
 /**
@@ -85,9 +88,15 @@ public class UserAnswerController {
         // todo 填充默认值
         User loginUser = userService.getLoginUser(request);
         userAnswer.setUserId(loginUser.getId());
-        // 写入数据库
-        boolean result = userAnswerService.save(userAnswer);
-        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+
+        try {
+            // 写入数据库
+            boolean result = userAnswerService.save(userAnswer);
+            ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        } catch(DuplicateKeyException e) {
+
+        }
+
         // 返回新写入的数据 id
         long newUserAnswerId = userAnswer.getId();
         // 调用评分模块
@@ -273,4 +282,16 @@ public class UserAnswerController {
     }
 
     // endregion
+
+    /**
+     * 生成用户答案唯一id
+     * @return
+     */
+    @GetMapping("/generate/id")
+    public BaseResponse<Long> generateUserAnswerId() {
+        // 生成唯一id
+        return ResultUtils.success(IdUtil.getSnowflakeNextId());
+    }
+
+
 }
