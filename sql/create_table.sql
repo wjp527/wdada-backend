@@ -3,10 +3,10 @@
 # @from <a href="https://wjp.icu">编程导航知识星球</a>
 
 -- 创建库
-create database if not exists my_db;
+create database if not exists wdada;
 
 -- 切换库
-use my_db;
+use wdada;
 
 -- 用户表
 create table if not exists user
